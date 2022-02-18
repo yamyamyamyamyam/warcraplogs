@@ -15,8 +15,22 @@ struct DamageEvent {
     let spellName: String
     let damageAmount: Int
     let unmitigatedAmount: Int
+    let didCrit: Int?
     let lineNumber: Int
+    let didGlance: Int?
+    let partialResistAmount: Int
+    var changeEvent: ChangeEvent?
 }
+
+struct ChangeEvent {
+    let changeType: String
+    let oldDamage: Int
+    let newDamage: Int
+    let stdDev: Double
+    let multiplier: Double
+}
+
+
 
 print("Enter log file path: ")
 guard let path = readLine() else { exit(5) }
@@ -37,6 +51,9 @@ var actionSet = Set<String>()
 let interestedActionTypes = ["SWING_DAMAGE_LANDED", "RANGE_DAMAGE", "SWING_DAMAGE", "SPELL_DAMAGE"]
 var damageInstances = [Int : DamageEvent]()
 var damageInstancesByPlayer = [String : [String : [DamageEvent]]]()
+var damageInstancesToModify = [DamageEvent]()
+let abilityWhitelist = ["\"Shadow Bolt\"", "\"Arcane Blast\"", "\"Starfire\"", "\"Lightning Bolt\"", "\"Heroic Strike\"", "\"Steady Shot\"", "\"Arcane Shot\"", "\"Shoot\"", "\"Auto Shot\"", "", "\"Shred\"", "\"Windfury Attack\"", "\"Sinister Strike\"", "\"Mind Blast\"", "\"Frostbolt\"", "\"Multi-Shot\"", "\"Mortal Strike\""]
+let resistableSpells = ["\"Shadow Bolt\"", "\"Arcane Blast\"", "\"Starfire\"", "\"Lightning Bolt\"", "\"Mind Blast\"", "\"Frostbolt\""]
 
 var lineCap: Int = 0
 var bytesRead = getline(&lineByteArrayPointer, &lineCap, filePointer)
@@ -51,9 +68,34 @@ while (bytesRead > 0) {
     if interestedActionTypes.contains(actionType) {
         let damageEvent: DamageEvent
         if actionType == "SPELL_DAMAGE" || actionType == "RANGE_DAMAGE" {
-            damageEvent = DamageEvent(timestamp: String(components[1]), type: actionType, sourceName: action[2].replacingOccurrences(of: "\"", with: ""), sourceFlags: action[3], spellName: action[10], damageAmount: Int(action[28])!, unmitigatedAmount: Int(action[29])!, lineNumber: currentLineNumber)
+            damageEvent = DamageEvent(timestamp: String(components[1]),
+                                      type: actionType,
+                                      sourceName: action[2].replacingOccurrences(of: "\"", with: ""),
+                                      sourceFlags: action[3],
+                                      spellName: action[10],
+                                      damageAmount: Int(action[28])!,
+                                      unmitigatedAmount: Int(action[29])!,
+                                      didCrit: Int(action[35]),
+                                      lineNumber: currentLineNumber,
+                                      didGlance: Int(action[36]),
+                                      partialResistAmount: Int(action[32])!,
+                                      changeEvent: nil)
         } else {
-            damageEvent = DamageEvent(timestamp: String(components[1]), type: actionType, sourceName: action[2].replacingOccurrences(of: "\"", with: ""), sourceFlags: action[3], spellName: "", damageAmount: Int(action[25])!, unmitigatedAmount: Int(action[26])!, lineNumber: currentLineNumber)
+            damageEvent = DamageEvent(timestamp: String(components[1]),
+                                      type: actionType,
+                                      sourceName: action[2].replacingOccurrences(of: "\"", with: ""),
+                                      sourceFlags: action[3],
+                                      spellName: "",
+                                      damageAmount: Int(action[25])!,
+                                      unmitigatedAmount: Int(action[26])!,
+                                      didCrit: Int(action[32]),
+                                      lineNumber: currentLineNumber,
+                                      didGlance: Int(action[33]),
+                                      partialResistAmount: Int(action[29])!,
+                                      changeEvent: nil)
+        }
+        if abilityWhitelist.contains(damageEvent.spellName) && damageEvent.sourceFlags.contains("0x5") {
+            damageInstancesToModify.append(damageEvent)
         }
         damageInstances[currentLineNumber] = damageEvent
         let sourceName = action[2].replacingOccurrences(of: "\"", with: "")
@@ -84,7 +126,7 @@ var sourceSet = Set<String>()
 for damageInstance in damageInstances {
     let instanceInformation = damageInstance.value
     let source = instanceInformation.sourceName
-    if instanceInformation.sourceFlags == "0x514" {
+    if instanceInformation.sourceFlags.contains("0x5") {
         sourceSet.insert(source)
     }
 }
@@ -136,9 +178,10 @@ print("\(numEvents) events, max damage of \(maxDamage), total damage \(totalDama
 print(" ")
 let juicedDPS = unJuicedDPS + Double(juiceFactor)!
 let requiredDamage = juicedDPS * timeElapsed
-let damageToJuice = requiredDamage - Double(totalDamage)
+let damageToJuice = Int(requiredDamage - Double(totalDamage))
 print("Need to juice \(damageToJuice) damage")
 print("Damage breakdown:")
+var playerAbilityStatsStorage = [String : [String : Any]]()
 for player in damageInstancesByPlayer.keys {
     print("\(player)")
     let currentPlayerDamageDictionary = damageInstancesByPlayer[player]!
@@ -147,24 +190,264 @@ for player in damageInstancesByPlayer.keys {
         let totalDamage = values.reduce(0, {x, y in
             x + y.damageAmount
         })
-        let meanDamage = totalDamage / values.count
-        let variance = Double(values.map({return abs($0.damageAmount - meanDamage)^2}).reduce(0, {x, y in
-            x + y
-        }) / values.count)
+        let crits = values.filter({return $0.didCrit == 1})
+        let critMultipliers = crits.map({return (Double($0.damageAmount) / Double($0.unmitigatedAmount))})
+        let critMultiplier = critMultipliers.reduce(0.0, +) / Double(critMultipliers.count)
+        let meanDamage = Double(totalDamage) / Double(values.count)
+        let differencesFromMean = values.map({return Double($0.damageAmount) - meanDamage})
+        let squaredDifferencesFromMean = differencesFromMean.map({return pow($0, 2)})
+        let sumOfSquaredDifferences = squaredDifferencesFromMean.reduce(0, +)
+        let variance = sumOfSquaredDifferences / Double(values.count)
         let standardDeviation = sqrt(variance)
-        print("\(damageType): \(values.count) instances, \(meanDamage) average damage, \(standardDeviation) stdDev")
-        
+        print("\(damageType): \(values.count) instances, \(meanDamage) average damage, \(standardDeviation) stdDev, avg crit multiplier \(critMultiplier)")
+        let stats: [String : Any] = ["SD" : standardDeviation,
+                                     "count" : values.count,
+                                     "mean" : meanDamage,
+                                     "critMultiplier" : critMultiplier]
+        playerAbilityStatsStorage["\(player)-\(damageType)"] = stats
     }
     print(" ")
     print(" ")
 }
-/*for damageType in playerDamageTypes {
-    let values = selectedPlayerDamageEvents.filter({$0.spellName == damageType})
-    let totalDamage = values.reduce(0, {x, y in
-        x + y.damageAmount
-    })
-    let averageDamage = totalDamage / values.count
-    print("\(damageType): \(values.count) instances, \(averageDamage) average damage")
-}*/
 
+//insert juice
+let damageEventsCount = damageInstancesToModify.count
+var damageJuiced = 0
+var damageLowered = 0
+var eventsAlreadyChecked = [Int]()
+var modifiedDamageEvents = [DamageEvent]()
 
+while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
+    var randomIndex = Int.random(in: 0..<damageEventsCount)
+    while eventsAlreadyChecked.contains(randomIndex) {
+        randomIndex = Int.random(in: 0..<damageEventsCount)
+    }
+    eventsAlreadyChecked.append(randomIndex)
+    let alterableEventCandidate = damageInstancesToModify[randomIndex]
+    let eventDamage = Double(alterableEventCandidate.damageAmount)
+    let choice = Int.random(in: 0..<100)
+    
+    func changeResistOrGlance() -> Bool {
+        let raiseOrLower = alterableEventCandidate.sourceName == playerName ? 1 : -1
+        if raiseOrLower == 1 && damageJuiced >= damageToJuice {
+            return false
+        } else if raiseOrLower == -1 && damageLowered <= (damageToJuice * -1) {
+            return false
+        }
+        if raiseOrLower == 1 {
+            if alterableEventCandidate.partialResistAmount > 0 {
+                //undo partial resist
+                let newDamageAmount = alterableEventCandidate.damageAmount + alterableEventCandidate.partialResistAmount
+                let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                                 type: alterableEventCandidate.type,
+                                                 sourceName: alterableEventCandidate.sourceName,
+                                                 sourceFlags: alterableEventCandidate.sourceFlags,
+                                                 spellName: alterableEventCandidate.spellName,
+                                                 damageAmount: newDamageAmount,
+                                                 unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
+                                                 didCrit: alterableEventCandidate.didCrit,
+                                                 lineNumber: alterableEventCandidate.lineNumber,
+                                                 didGlance: alterableEventCandidate.didGlance,
+                                                 partialResistAmount: 0,
+                                                 changeEvent: ChangeEvent(changeType: "partialResist", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamageAmount, stdDev: 0.0, multiplier: 0.0))
+                modifiedDamageEvents.append(newDamageEvent)
+                let amountDamageAdded = newDamageAmount - alterableEventCandidate.damageAmount
+                damageJuiced += amountDamageAdded
+                return true
+            } else if alterableEventCandidate.didGlance != nil {
+                //undo glancing blow
+                let glanceModifier = Float.random(in: 0.0..<0.25)
+                let oldDamageAmount = Float(alterableEventCandidate.damageAmount)
+                let newDamageAmount = Int(oldDamageAmount + (oldDamageAmount * glanceModifier))
+                //let newDamageAmount = alterableEventCandidate.damageAmount + alterableEventCandidate.partialResistAmount
+                let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                                 type: alterableEventCandidate.type,
+                                                 sourceName: alterableEventCandidate.sourceName,
+                                                 sourceFlags: alterableEventCandidate.sourceFlags,
+                                                 spellName: alterableEventCandidate.spellName,
+                                                 damageAmount: newDamageAmount,
+                                                 unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
+                                                 didCrit: alterableEventCandidate.didCrit,
+                                                 lineNumber: alterableEventCandidate.lineNumber,
+                                                 didGlance: nil,
+                                                 partialResistAmount: 0,
+                                                 changeEvent: ChangeEvent(changeType: "glanceUndo", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamageAmount, stdDev: 0.0, multiplier: 0.0))
+                modifiedDamageEvents.append(newDamageEvent)
+                let amountDamageAdded = newDamageAmount - alterableEventCandidate.damageAmount
+                damageJuiced += amountDamageAdded
+            } else {
+                return false
+            }
+        } else {
+            if alterableEventCandidate.partialResistAmount > 0 {
+                return false
+            } else if alterableEventCandidate.didGlance != nil {
+                return false
+            } else {
+                //if spell, resist, if melee, glance
+                if alterableEventCandidate.spellName == "" {
+                    //glance
+                    let glanceModifier = Float.random(in: 0.0..<0.25)
+                    let oldDamageAmount = Float(alterableEventCandidate.damageAmount)
+                    let newDamageAmount = Int(oldDamageAmount - (oldDamageAmount * glanceModifier))
+                    //let newDamageAmount = alterableEventCandidate.damageAmount + alterableEventCandidate.partialResistAmount
+                    let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                                     type: alterableEventCandidate.type,
+                                                     sourceName: alterableEventCandidate.sourceName,
+                                                     sourceFlags: alterableEventCandidate.sourceFlags,
+                                                     spellName: alterableEventCandidate.spellName,
+                                                     damageAmount: newDamageAmount,
+                                                     unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
+                                                     didCrit: alterableEventCandidate.didCrit,
+                                                     lineNumber: alterableEventCandidate.lineNumber,
+                                                     didGlance: 1,
+                                                     partialResistAmount: 0,
+                                                     changeEvent: ChangeEvent(changeType: "glanceDo", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamageAmount, stdDev: 0.0, multiplier: 0.0))
+                    modifiedDamageEvents.append(newDamageEvent)
+                    let amountDamageReduced = newDamageAmount - alterableEventCandidate.damageAmount
+                    damageLowered += amountDamageReduced
+                } else if resistableSpells.contains(alterableEventCandidate.spellName) {
+                    //partial resist
+                    let partialResistAmount = Int.random(in: 0..<3) + 1
+                    let resistFraction = (Double(partialResistAmount) * Double(25)) / 100.0
+                    let damageSubtrahend = resistFraction * Double(alterableEventCandidate.unmitigatedAmount)
+                    let newDamageAmount = Int(Double(alterableEventCandidate.damageAmount) - damageSubtrahend)
+                    let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                                     type: alterableEventCandidate.type,
+                                                     sourceName: alterableEventCandidate.sourceName,
+                                                     sourceFlags: alterableEventCandidate.sourceFlags,
+                                                     spellName: alterableEventCandidate.spellName,
+                                                     damageAmount: newDamageAmount,
+                                                     unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
+                                                     didCrit: alterableEventCandidate.didCrit,
+                                                     lineNumber: alterableEventCandidate.lineNumber,
+                                                     didGlance: nil,
+                                                     partialResistAmount: Int(damageSubtrahend),
+                                                     changeEvent: ChangeEvent(changeType: "addResist", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamageAmount, stdDev: 0.0, multiplier: 0.0))
+                    modifiedDamageEvents.append(newDamageEvent)
+                    damageLowered -= Int(damageSubtrahend)
+                } else {
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    func raiseOrLowerDamageRoll() -> Bool {
+        let raiseOrLower = alterableEventCandidate.sourceName == playerName ? 1 : -1
+        if raiseOrLower == 1 && damageJuiced >= damageToJuice {
+            return false
+        } else if raiseOrLower == -1 && damageLowered <= (damageToJuice * -1) {
+            return false
+        }
+        let eventTypeStdDev = playerAbilityStatsStorage["\(alterableEventCandidate.sourceName)-\(alterableEventCandidate.spellName)"]!["SD"] as! Double
+        let eventMean = playerAbilityStatsStorage["\(alterableEventCandidate.sourceName)-\(alterableEventCandidate.spellName)"]!["mean"] as! Double
+        if abs(eventDamage - eventMean) <= eventTypeStdDev {
+            if (eventDamage - eventMean) > 0 && raiseOrLower == 1 {
+                return false
+            }
+            if (eventDamage - eventMean) < 0 && raiseOrLower == -1 {
+                return false
+            }
+            let multiplier = Double.random(in: 0.5..<1.5)
+            let addend = Int(multiplier * eventTypeStdDev) * raiseOrLower
+            let unmitigatedAddend = Int((Double(alterableEventCandidate.unmitigatedAmount) / Double(alterableEventCandidate.damageAmount)) * Double(addend)) * raiseOrLower
+            let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                             type: alterableEventCandidate.type,
+                                             sourceName: alterableEventCandidate.sourceName,
+                                             sourceFlags: alterableEventCandidate.sourceFlags,
+                                             spellName: alterableEventCandidate.spellName,
+                                             damageAmount: alterableEventCandidate.damageAmount + addend,
+                                             unmitigatedAmount: alterableEventCandidate.unmitigatedAmount + unmitigatedAddend,
+                                             didCrit: alterableEventCandidate.didCrit,
+                                             lineNumber: alterableEventCandidate.lineNumber,
+                                             didGlance: alterableEventCandidate.didGlance,
+                                             partialResistAmount: alterableEventCandidate.partialResistAmount,
+                                             changeEvent: ChangeEvent(changeType: "damageRoll", oldDamage: alterableEventCandidate.damageAmount, newDamage: alterableEventCandidate.damageAmount + addend, stdDev: eventTypeStdDev, multiplier: multiplier))
+            modifiedDamageEvents.append(newDamageEvent)
+            let damageChange = newDamageEvent.damageAmount - alterableEventCandidate.damageAmount
+            if damageChange < 0 {
+                damageLowered += damageChange
+            } else {
+                damageJuiced += damageChange
+            }
+            return true
+        } else {
+            return false
+        }
+    }
+
+    func makeOrUnMakeCrit() -> Bool {
+        let raiseOrLower = alterableEventCandidate.sourceName == playerName ? 1 : -1
+        if raiseOrLower == 1 && damageJuiced >= damageToJuice {
+            return false
+        } else if raiseOrLower == -1 && damageLowered <= (damageToJuice * -1) {
+            return false
+        }
+        if raiseOrLower == 1 {
+            //if rogue auto or ability, or spriest mind blast
+            if alterableEventCandidate.didCrit != 1 {
+                
+            } else {
+                return false
+            }
+        } else {
+            if alterableEventCandidate.didCrit != 1 {
+                return false
+            } else {
+                /*//make sure it's the right ability
+                if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)"]?["critMultiplier"] as? Double {
+                    let newDamage = Int(Double(alterableEventCandidate.damageAmount) / critMultiplier)
+                    let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                                     type: alterableEventCandidate.type,
+                                                     sourceName: alterableEventCandidate.sourceName,
+                                                     sourceFlags: alterableEventCandidate.sourceFlags,
+                                                     spellName: alterableEventCandidate.spellName,
+                                                     damageAmount: newDamage,
+                                                     unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
+                                                     didCrit: nil,
+                                                     lineNumber: alterableEventCandidate.lineNumber,
+                                                     didGlance: alterableEventCandidate.didGlance,
+                                                     partialResistAmount: alterableEventCandidate.partialResistAmount,
+                                                     changeEvent: ChangeEvent(changeType: "crit", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamage, stdDev: 0.0, multiplier: critMultiplier))
+                    let damageDifference = newDamage - alterableEventCandidate.damageAmount
+                    damageLowered += damageDifference
+                    modifiedDamageEvents.append(newDamageEvent)
+                    return true*/
+                
+            }
+        }
+        return false
+    }
+    
+    switch choice {
+    case 0..<33:
+        var result = changeResistOrGlance()
+        if !result {
+            result = raiseOrLowerDamageRoll()
+            if !result {
+                result = makeOrUnMakeCrit()
+            }
+        }
+    case 33..<66:
+        var result = raiseOrLowerDamageRoll()
+        if !result {
+            result = makeOrUnMakeCrit()
+            if !result {
+                result = changeResistOrGlance()
+            }
+        }
+    default:
+        var result = makeOrUnMakeCrit()
+        if !result {
+            result = changeResistOrGlance()
+            if !result {
+                result = raiseOrLowerDamageRoll()
+            }
+        }
+    }
+}
+
+print("")
+readLine()
