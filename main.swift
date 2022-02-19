@@ -217,10 +217,15 @@ var damageLowered = 0
 var eventsAlreadyChecked = [Int]()
 var modifiedDamageEvents = [DamageEvent]()
 
+var indexCount = 0
+var indexArray = Array(0..<damageEventsCount)
+var shuffledArray = indexArray.shuffled()
+
 while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
-    var randomIndex = Int.random(in: 0..<damageEventsCount)
+    var randomIndex = shuffledArray[indexCount]
     while eventsAlreadyChecked.contains(randomIndex) {
-        randomIndex = Int.random(in: 0..<damageEventsCount)
+        indexCount += 1
+        randomIndex = shuffledArray[indexCount]
     }
     eventsAlreadyChecked.append(randomIndex)
     let alterableEventCandidate = damageInstancesToModify[randomIndex]
@@ -335,6 +340,9 @@ while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
     }
 
     func raiseOrLowerDamageRoll() -> Bool {
+        if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
+            return false
+        }
         let raiseOrLower = alterableEventCandidate.sourceName == playerName ? 1 : -1
         if raiseOrLower == 1 && damageJuiced >= damageToJuice {
             return false
@@ -371,6 +379,32 @@ while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
                 damageLowered += damageChange
             } else {
                 damageJuiced += damageChange
+            }
+            if alterableEventCandidate.type == "SWING_DAMAGE" {
+                var swingDamageLandedEventFound = false
+                var nextIndexToCheck = randomIndex + 1
+                while !swingDamageLandedEventFound {
+                    let candidateEvent = damageInstancesToModify[nextIndexToCheck]
+                    if candidateEvent.type == "SWING_DAMAGE_LANDED" && candidateEvent.sourceName == alterableEventCandidate.sourceName && candidateEvent.damageAmount == alterableEventCandidate.damageAmount {
+                        let newDamageEvent = DamageEvent(timestamp: candidateEvent.timestamp,
+                                                         type: candidateEvent.type,
+                                                         sourceName: candidateEvent.sourceName,
+                                                         sourceFlags: candidateEvent.sourceFlags,
+                                                         spellName: candidateEvent.spellName,
+                                                         damageAmount: candidateEvent.damageAmount + addend,
+                                                         unmitigatedAmount: candidateEvent.unmitigatedAmount + unmitigatedAddend,
+                                                         didCrit: candidateEvent.didCrit,
+                                                         lineNumber: candidateEvent.lineNumber,
+                                                         didGlance: candidateEvent.didGlance,
+                                                         partialResistAmount: candidateEvent.partialResistAmount,
+                                                         changeEvent: ChangeEvent(changeType: "swinglandedcorrection", oldDamage: alterableEventCandidate.damageAmount, newDamage: alterableEventCandidate.damageAmount + addend, stdDev: eventTypeStdDev, multiplier: multiplier))
+                        modifiedDamageEvents.append(newDamageEvent)
+                        eventsAlreadyChecked.append(nextIndexToCheck)
+                        swingDamageLandedEventFound = true
+                    } else {
+                        nextIndexToCheck += 1
+                }
+            }
             }
             return true
         } else {
@@ -447,7 +481,44 @@ while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
             }
         }
     }
+    indexCount += 1
 }
 
-print("")
+print("Write file?")
 readLine()
+
+
+//insert juice
+
+do {
+    var fileString = try String.init(contentsOfFile: path)
+    var fileComponents = fileString.components(separatedBy: .newlines).filter({$0 != ""})
+    for damageEvent in modifiedDamageEvents {
+        print(damageEvent.lineNumber)
+        let originalString = fileComponents[damageEvent.lineNumber]
+        var lineComponents = originalString.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: false).map({return String($0)})
+        var actionComponents = lineComponents[3].components(separatedBy: ",")
+        if damageEvent.type == "SPELL_DAMAGE" || damageEvent.type == "RANGE_DAMAGE" {
+            actionComponents[28] = String(damageEvent.damageAmount)
+            actionComponents[29] = String(damageEvent.unmitigatedAmount)
+            actionComponents[35] = damageEvent.didCrit == nil ? "nil" : String(damageEvent.didCrit!)
+            actionComponents[36] = damageEvent.didGlance == nil ? "nil" : String(damageEvent.didGlance!)
+            actionComponents[32] = String(damageEvent.partialResistAmount)
+        } else {
+            actionComponents[25] = String(damageEvent.damageAmount)
+            actionComponents[26] = String(damageEvent.unmitigatedAmount)
+            actionComponents[32] = damageEvent.didCrit == nil ? "nil" : String(damageEvent.didCrit!)
+            actionComponents[33] = damageEvent.didGlance == nil ? "nil" : String(damageEvent.didGlance!)
+            actionComponents[29] = String(damageEvent.partialResistAmount)
+        }
+        let actionComponentsRecomposed = actionComponents.joined(separator: ",")
+        lineComponents[3] = actionComponentsRecomposed
+        let newString = lineComponents.joined(separator: " ")
+        fileComponents[damageEvent.lineNumber] = String(newString)
+    }
+    fileString = fileComponents.joined(separator: "\n")
+    try fileString.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
+} catch {
+    print(error)
+}
+
