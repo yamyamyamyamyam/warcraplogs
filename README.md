@@ -4,7 +4,7 @@ WarcrapLogs is a tool designed for use with WarcraftLogs. WarcrapLogs uses stati
 
 WarcrapLogs manipulates combat logs in several ways. It modifies the damage rolls of attacks with variable damage, decreasing the damage of certain attacks by other players in your raid while increasing the damage of attacks performed by the character whose parse you are increasing. Secondly, it removes a sampling of glancing blows or partial resists by the targeted character, while adding partial resists and glancing blows to other players' attacks. Lastly, it turns some attacks by the targeted character into critical strikes and others by non-targeted characters into normal hits.
 
-The total damage, as well as the rate of damage, done by the raid remains the same before and after manipulation.
+The rate of damage and total damage done by the raid remains the same before and after manipulation.
 
 # Usage
 
