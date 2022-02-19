@@ -54,6 +54,7 @@ var damageInstancesByPlayer = [String : [String : [DamageEvent]]]()
 var damageInstancesToModify = [DamageEvent]()
 let abilityWhitelist = ["\"Shadow Bolt\"", "\"Arcane Blast\"", "\"Starfire\"", "\"Lightning Bolt\"", "\"Heroic Strike\"", "\"Steady Shot\"", "\"Arcane Shot\"", "\"Shoot\"", "\"Auto Shot\"", "", "\"Shred\"", "\"Windfury Attack\"", "\"Sinister Strike\"", "\"Mind Blast\"", "\"Frostbolt\"", "\"Multi-Shot\"", "\"Mortal Strike\""]
 let resistableSpells = ["\"Shadow Bolt\"", "\"Arcane Blast\"", "\"Starfire\"", "\"Lightning Bolt\"", "\"Mind Blast\"", "\"Frostbolt\""]
+let critManipulableSpells = ["\"Mind Blast\"", "", "\"Sinister Strike\"", "\"Starfire\""]
 
 var lineCap: Int = 0
 var bytesRead = getline(&lineByteArrayPointer, &lineCap, filePointer)
@@ -221,7 +222,7 @@ var indexCount = 0
 var indexArray = Array(0..<damageEventsCount)
 var shuffledArray = indexArray.shuffled()
 
-while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
+while (damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1)) && indexCount < damageEventsCount {
     var randomIndex = shuffledArray[indexCount]
     while eventsAlreadyChecked.contains(randomIndex) {
         indexCount += 1
@@ -420,9 +421,68 @@ while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
             return false
         }
         if raiseOrLower == 1 {
+            if Int.random(in: 0..<20) > 7 {
+                return false
+            }
             //if rogue auto or ability, or spriest mind blast
             if alterableEventCandidate.didCrit != 1 {
-                
+                if critManipulableSpells.contains(alterableEventCandidate.spellName) {
+                    if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
+                        return false
+                    }
+                    if alterableEventCandidate.spellName == "" {
+                        //if not rogue, exit
+                    }
+                    if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)"]?["critMultiplier"] as? Double {
+                        let newDamage = Int(Double(alterableEventCandidate.damageAmount) * critMultiplier)
+                        let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                                         type: alterableEventCandidate.type,
+                                                         sourceName: alterableEventCandidate.sourceName,
+                                                         sourceFlags: alterableEventCandidate.sourceFlags,
+                                                         spellName: alterableEventCandidate.spellName,
+                                                         damageAmount: newDamage,
+                                                         unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
+                                                         didCrit: 1,
+                                                         lineNumber: alterableEventCandidate.lineNumber,
+                                                         didGlance: alterableEventCandidate.didGlance,
+                                                         partialResistAmount: alterableEventCandidate.partialResistAmount,
+                                                         changeEvent: ChangeEvent(changeType: "crit", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamage, stdDev: 0.0, multiplier: critMultiplier))
+                        let damageDifference = newDamage - alterableEventCandidate.damageAmount
+                        damageJuiced += damageDifference
+                        modifiedDamageEvents.append(newDamageEvent)
+                        if alterableEventCandidate.type == "SWING_DAMAGE" {
+                            var swingDamageLandedEventFound = false
+                            var nextIndexToCheck = randomIndex + 1
+                            while !swingDamageLandedEventFound {
+                                let candidateEvent = damageInstancesToModify[nextIndexToCheck]
+                                if candidateEvent.type == "SWING_DAMAGE_LANDED" && candidateEvent.sourceName == alterableEventCandidate.sourceName && candidateEvent.damageAmount == alterableEventCandidate.damageAmount {
+                                    let newDamageEvent = DamageEvent(timestamp: candidateEvent.timestamp,
+                                                                     type: candidateEvent.type,
+                                                                     sourceName: candidateEvent.sourceName,
+                                                                     sourceFlags: candidateEvent.sourceFlags,
+                                                                     spellName: candidateEvent.spellName,
+                                                                     damageAmount: newDamage,
+                                                                     unmitigatedAmount: candidateEvent.unmitigatedAmount,
+                                                                     didCrit: 1,
+                                                                     lineNumber: candidateEvent.lineNumber,
+                                                                     didGlance: candidateEvent.didGlance,
+                                                                     partialResistAmount: candidateEvent.partialResistAmount,
+                                                                     changeEvent: ChangeEvent(changeType: "crit", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamage, stdDev: 0.0, multiplier: critMultiplier))
+                                    modifiedDamageEvents.append(newDamageEvent)
+                                    eventsAlreadyChecked.append(nextIndexToCheck)
+                                    swingDamageLandedEventFound = true
+                                } else {
+                                    nextIndexToCheck += 1
+                            }
+                        }
+                        }
+                        return true
+                    } else {
+                        return false
+                    }
+                } else {
+                    return false
+                }
             } else {
                 return false
             }
@@ -430,26 +490,63 @@ while damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1) {
             if alterableEventCandidate.didCrit != 1 {
                 return false
             } else {
-                /*//make sure it's the right ability
-                if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)"]?["critMultiplier"] as? Double {
-                    let newDamage = Int(Double(alterableEventCandidate.damageAmount) / critMultiplier)
-                    let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
-                                                     type: alterableEventCandidate.type,
-                                                     sourceName: alterableEventCandidate.sourceName,
-                                                     sourceFlags: alterableEventCandidate.sourceFlags,
-                                                     spellName: alterableEventCandidate.spellName,
-                                                     damageAmount: newDamage,
-                                                     unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
-                                                     didCrit: nil,
-                                                     lineNumber: alterableEventCandidate.lineNumber,
-                                                     didGlance: alterableEventCandidate.didGlance,
-                                                     partialResistAmount: alterableEventCandidate.partialResistAmount,
-                                                     changeEvent: ChangeEvent(changeType: "crit", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamage, stdDev: 0.0, multiplier: critMultiplier))
-                    let damageDifference = newDamage - alterableEventCandidate.damageAmount
-                    damageLowered += damageDifference
-                    modifiedDamageEvents.append(newDamageEvent)
-                    return true*/
-                
+                if critManipulableSpells.contains(alterableEventCandidate.spellName) {
+                    if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
+                        return false
+                    }
+                    if alterableEventCandidate.spellName == "" {
+                        //if not rogue, exit
+                    }
+                    if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)"]?["critMultiplier"] as? Double {
+                        let newDamage = Int(Double(alterableEventCandidate.damageAmount) / critMultiplier)
+                        let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
+                                                         type: alterableEventCandidate.type,
+                                                         sourceName: alterableEventCandidate.sourceName,
+                                                         sourceFlags: alterableEventCandidate.sourceFlags,
+                                                         spellName: alterableEventCandidate.spellName,
+                                                         damageAmount: newDamage,
+                                                         unmitigatedAmount: alterableEventCandidate.unmitigatedAmount,
+                                                         didCrit: nil,
+                                                         lineNumber: alterableEventCandidate.lineNumber,
+                                                         didGlance: alterableEventCandidate.didGlance,
+                                                         partialResistAmount: alterableEventCandidate.partialResistAmount,
+                                                         changeEvent: ChangeEvent(changeType: "crit", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamage, stdDev: 0.0, multiplier: critMultiplier))
+                        let damageDifference = newDamage - alterableEventCandidate.damageAmount
+                        damageLowered += damageDifference
+                        modifiedDamageEvents.append(newDamageEvent)
+                        if alterableEventCandidate.type == "SWING_DAMAGE" {
+                            var swingDamageLandedEventFound = false
+                            var nextIndexToCheck = randomIndex + 1
+                            while !swingDamageLandedEventFound {
+                                let candidateEvent = damageInstancesToModify[nextIndexToCheck]
+                                if candidateEvent.type == "SWING_DAMAGE_LANDED" && candidateEvent.sourceName == alterableEventCandidate.sourceName && candidateEvent.damageAmount == alterableEventCandidate.damageAmount {
+                                    let newDamageEvent = DamageEvent(timestamp: candidateEvent.timestamp,
+                                                                     type: candidateEvent.type,
+                                                                     sourceName: candidateEvent.sourceName,
+                                                                     sourceFlags: candidateEvent.sourceFlags,
+                                                                     spellName: candidateEvent.spellName,
+                                                                     damageAmount: newDamage,
+                                                                     unmitigatedAmount: candidateEvent.unmitigatedAmount,
+                                                                     didCrit: nil,
+                                                                     lineNumber: candidateEvent.lineNumber,
+                                                                     didGlance: candidateEvent.didGlance,
+                                                                     partialResistAmount: candidateEvent.partialResistAmount,
+                                                                     changeEvent: ChangeEvent(changeType: "crit", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamage, stdDev: 0.0, multiplier: critMultiplier))
+                                    modifiedDamageEvents.append(newDamageEvent)
+                                    eventsAlreadyChecked.append(nextIndexToCheck)
+                                    swingDamageLandedEventFound = true
+                                } else {
+                                    nextIndexToCheck += 1
+                            }
+                        }
+                        }
+                        return true
+                    } else {
+                        return false
+                    }
+                } else {
+                    return false
+                }
             }
         }
         return false
@@ -521,4 +618,5 @@ do {
 } catch {
     print(error)
 }
+
 
