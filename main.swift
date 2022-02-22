@@ -334,6 +334,9 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
             damageJuiced += amountDamageAdded
             return true
         } else if alterableEventCandidate.didGlance != nil {
+			if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
+				return false
+			}
             //undo glancing blow
             let glanceModifier = Float.random(in: 0.0..<0.25)
             let oldDamageAmount = Float(alterableEventCandidate.damageAmount)
@@ -396,6 +399,9 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
             //if spell, resist, if melee, glance
             if alterableEventCandidate.spellName == "" {
                 //glance
+				if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
+					return false
+				}
                 let glanceModifier = Float.random(in: 0.0..<0.25)
                 let oldDamageAmount = Float(alterableEventCandidate.damageAmount)
                 let newDamageAmount = Int(oldDamageAmount - (oldDamageAmount * glanceModifier))
