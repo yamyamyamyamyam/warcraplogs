@@ -32,7 +32,7 @@
 	}
 	
 	</style>
-<script type="text/javascript" src="14b5523b05ce9949.js"></script></head>
+<script type="text/javascript" src="f41dc4975704d23e.js"></script></head>
 <body style = "background-color:#37393E;font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',color:#97A9B4;">
 <div class="split left">
 	<div class="flex">
@@ -54,9 +54,15 @@
 
 	The rate of damage and total damage done by the raid remains the same before and after manipulation.<br><br>
 	
-	To use this tool, choose your log file. This applet will take some time to parse your log, during which the tab may become unresponsive. Afterward, a list of players is displayed on the page. Enter the player name and the desired DPS gain and hit "Juice it"! WarcrapLogs will now comb your log and manipulate certain combat events.<br><br>
+	To use this tool, choose your log file. It will take some time to parse your log, during which the tab may become unresponsive. Afterward, a list of players will displayed on the page. Enter the player name and the desired DPS gain and hit "Juice it"! WarcrapLogs will now comb your log and manipulate certain combat events.<br><br>
 	
-	When the right side of the page displays a list of events modified, you can save the modified log by hitting the "Save Modified Log" button.
+	When the right side of the page displays a list of events modified, you can save the modified log by hitting the "Save Modified Log" button.<br><br>
+	
+	Known issues:<br>
+	Slow in browser (tested with 175MB logs, smaller is recommended)<br>
+	Crit manipulation does not properly validate class yet (only some classes/abilities have fudgeable critical strikes)<br>
+	Crit manipulation damage calculations may not be completely unfalsifiable yet<br>
+	Not all manipulable abilites/damage instances are accounted for yet; todo is complete the list; add pet damage, for example
 </div>
 <div class="split right">
 	<div id="debug-out-area">
