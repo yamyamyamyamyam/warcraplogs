@@ -64,6 +64,11 @@ func handleFileSelect(_ file: JSValue) {
 	            sourceSet.insert(source)
 	        }
 	    }
+		for item in sourceSet {
+			let playerDamageEvents = damageInstancesByPlayer[item]
+            let className = determineClass(damageEventNames: playerDamageEvents?.keys.map({return String($0)}) ?? [""])
+            playerNameClassDictionary[item] = className
+		}
 		let sourceString = sourceSet.reduce("", {return $0.appending("\($1)<br>")})
 		print(sourceString)
 		debugOutputArea.innerHTML = .string(sourceString)
@@ -72,6 +77,15 @@ func handleFileSelect(_ file: JSValue) {
     .catch { error in
         return JSValue.undefined
     }
+}
+
+func determineClass(damageEventNames: [String]) -> String {
+    if damageEventNames.filter({return $0.contains("Sinister Strike")}).count > 0 {
+        return "Rogue"
+    } else {
+        return "default"
+    }
+    //todo finish. for now, only interested in checking if melees are rogue melees
 }
 
 func handleJuiceClick() {
@@ -147,6 +161,7 @@ var playerDamageDictionary = [String : [String : [DamageEvent]]]()
 var playerName: String = ""
 var juiceFactor: String = ""
 var modificationsSummaryString = ""
+var playerNameClassDictionary = [String : String]()
 
 var sourceSet = Set<String>()
 
@@ -590,6 +605,9 @@ func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
                 }
                 if alterableEventCandidate.spellName == "" {
                     //if not rogue, exit
+					if playerNameClassDictionary[alterableEventCandidate.sourceName] != "Rogue" {
+                        return false
+                    }
                 }
                 if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)-nonCrit"]?["critMultiplier"] as? Double {
                     let newDamage = Int(Double(alterableEventCandidate.damageAmount) * critMultiplier)
@@ -655,6 +673,9 @@ func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
                 }
                 if alterableEventCandidate.spellName == "" {
                     //if not rogue, exit
+					if playerNameClassDictionary[alterableEventCandidate.sourceName] != "Rogue" {
+                        return false
+                    }
                 }
                 if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)-nonCrit"]?["critMultiplier"] as? Double {
                     let newDamage = Int(Double(alterableEventCandidate.damageAmount) / critMultiplier)
