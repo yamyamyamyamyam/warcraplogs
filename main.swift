@@ -10,11 +10,47 @@ import JavaScriptKit
 
 let document = JSObject.global.document
 let fileSelect = document.getElementById("log-select").object!
+let outputArea = document.getElementById("output-area").object!
+let juiceButton = document.getElementById("juicebutton").object!
+let playerNameInputForm = document.getElementById("playername-input").object!
+let dpsGainInputForm = document.getElementById("dpsgain-input").object!
+let debugOutputArea = document.getElementById("debug-out-area").object!
+let saveLogButtonArea = document.getElementById("savelogbutton").object!
+
+func annoyingTimeSince(earliestTime: String, latestTime: String) -> Double {
+    let earliestComponents = earliestTime.split(separator: ":")
+    let latestComponents = latestTime.split(separator: ":")
+    let earliestHours = Double(earliestComponents[0])!
+    let earliestMinutes = Double(earliestComponents[1])!
+    let earliestSeconds = Double(earliestComponents[2])!
+    let earliestMilliseconds = Double(earliestTime.components(separatedBy: ".")[1])!
+    let totalEarliestSeconds = earliestHours * 3600 + earliestMinutes * 60 + earliestSeconds + earliestMilliseconds / 1000
+    let latestHours = Double(latestComponents[0])!
+    let latestMinutes = Double(latestComponents[1])!
+    let latestSeconds = Double(latestComponents[2])!
+    let latestMilliseconds = Double(latestTime.components(separatedBy: ".")[1])!
+    let totalLatestSeconds = latestHours * 3600 + latestMinutes * 60 + latestSeconds + latestMilliseconds / 1000
+    if totalEarliestSeconds > totalLatestSeconds {
+        return totalLatestSeconds + (86400 - totalEarliestSeconds)
+    } else {
+        return totalLatestSeconds - totalEarliestSeconds
+    }
+}
 
 let fileSelectHandler = JSClosure { arguments in
     let file = fileSelect.files.item(0)
     handleFileSelect(file)
     return .undefined
+}
+
+let juiceClickHandler = JSClosure { arguments in
+	handleJuiceClick()
+	return .undefined
+}
+
+let saveClickHandler = JSClosure { arguments in
+	handleSaveClick()
+	return .undefined
 }
 
 class ContentWriter: TextOutputStream {
@@ -27,15 +63,54 @@ class ContentWriter: TextOutputStream {
 func handleFileSelect(_ file: JSValue) {
     JSPromise(file.text().object!)!.then { value in
         let fileName = file.name.string!
-        print(file.string)
+		outputArea.innerHTML = .string("""
+		        <div>
+		            Whose parse you tryna juice?
+		        </div>
+		        """)
+		print("reached here")
+		initializeData(fileContents: value.string!)
+		oldFileString = value.string!
+		print("initialized data")
+	    for damageInstance in damageInstances {
+	        let instanceInformation = damageInstance.value
+	        let source = instanceInformation.sourceName
+	        if instanceInformation.sourceFlags.contains("0x5") {
+	            sourceSet.insert(source)
+	        }
+	    }
+		let sourceString = sourceSet.reduce("", {return $0.appending("\($1)<br>")})
+		print(sourceString)
+		outputArea.innerHTML = .string(sourceString)
+        //logSelected(file: value.string!, playerNameInput: "Draklian-Faerlina", juiceFactorInput: "200")
         let baseName = String(fileName.split(separator: ".").dropLast().joined(separator: "."))
         var writer = ContentWriter()
-        print(value.string!)
         return JSValue.undefined
     }
     .catch { error in
         return JSValue.undefined
     }
+}
+
+func handleJuiceClick() {
+    playerName = playerNameInputForm.value.string!
+    juiceFactor = dpsGainInputForm.value.string!
+	print(playerName)
+	print(juiceFactor)
+    print("juicing")
+    getPlayerDPSEvents(playerName: playerName)
+    fillPlayerAbilityStatsStorage()
+    createModifiedDamageEvents()
+    composeNewFileString(oldString: oldFileString)
+}
+
+func handleSaveClick() {
+	var pom = document.createElement("a")
+	var characterSet = NSMutableCharacterSet.alphanumerics
+	characterSet.insert(charactersIn: "-_.!~*'()")
+	pom.setAttribute("href", "data:text/plain;charset=utf-8," + newFileString.addingPercentEncoding(withAllowedCharacters: characterSet)!)
+	pom.setAttribute("download", "newLog.txt")
+	pom.click()
 }
 
 struct DamageEvent {
@@ -62,7 +137,10 @@ struct ChangeEvent {
 }
 
 fileSelect.addEventListener!("change", fileSelectHandler)
+juiceButton.addEventListener!("click", juiceClickHandler)
+saveLogButtonArea.addEventListener!("click", saveClickHandler)
 
+var oldFileString = ""
 var actionSet = Set<String>()
 let interestedActionTypes = ["SWING_DAMAGE_LANDED", "RANGE_DAMAGE", "SWING_DAMAGE", "SPELL_DAMAGE"]
 var damageInstances = [Int : DamageEvent]()
@@ -74,41 +152,47 @@ let critManipulableSpells = ["\"Mind Blast\"", "", "\"Sinister Strike\"", "\"Sta
 
 var selectedPlayerDamageEvents = [DamageEvent]()
 let dateFormatter = DateFormatter()
-dateFormatter.dateFormat = "HH:mm:ss.SSS"
-var latestTime = Date(timeIntervalSince1970: 0.0)
-var earliestTime = Date()
+//dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+//dateFormatter.dateFormat = "HH:mm:ss.SSS"
+//	dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+//dateFormatter.setLocalizedDateFormatFromTemplate("")
+var latestTime = "00:00:00.000"
+var earliestTime = "23:59:59.999"
 var maxDamage = 0
 var totalDamage = 0
 var playerDamageTypes = Set<String>()
 var playerDamageDictionary = [String : [String : [DamageEvent]]]()
-var playerName: String
-var juiceFactor: String
+var playerName: String = ""
+var juiceFactor: String = ""
+var modificationsSummaryString = ""
 
 var sourceSet = Set<String>()
 
-var numEvents: Int
-var timeElapsed: TimeInterval
-var unJuicedDPS: Double
-var juicedDPS: Double
-var requiredDamage: Double
-var damageToJuice: Int
+var numEvents: Int = 0
+var timeElapsed: TimeInterval = 0.0
+var unJuicedDPS: Double = 0.0
+var juicedDPS: Double = 0.0
+var requiredDamage: Double = 0.0
+var damageToJuice: Int = 0
 
 var playerAbilityStatsStorage = [String : [String : Any]]()
 
-var damageEventsCount: Int
-var damageJuiced: Int
-var damageLowered: Int
+var damageEventsCount: Int = 0
+var damageJuiced: Int = 0
+var damageLowered: Int = 0
 var eventsAlreadyChecked = [Int]()
 var modifiedDamageEvents = [DamageEvent]()
 
-var indexCount: Int
-var indexArray: Array<Int>
-var shuffledArray: Array<Int>
-var randomIndex: Int
+var indexCount: Int = 0
+var indexArray: Array<Int> = [0]
+var shuffledArray: Array<Int> = [0]
+var randomIndex: Int = 0
+
+var newFileString = ""
 
 func initializeData(fileContents: String) {
     var currentLineNumber = 0
-    let tokenizedFile = fileContents.components(separatedBy: .newlines).compactMap({return $0})
+    let tokenizedFile = fileContents.components(separatedBy: .newlines).filter({$0 != ""})
     for line in tokenizedFile {
         let components = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: false)
         //let components = lineAsString.components(separatedBy: " ")
@@ -175,13 +259,13 @@ func getPlayerDPSEvents(playerName: String) {
     for playerDamageEventKey in playerDamageEvents.keys {
         let values = playerDamageEvents[playerDamageEventKey]!
         for playerDamageEvent in values {
-            let time = dateFormatter.date(from: playerDamageEvent.timestamp)!
+            let time = playerDamageEvent.timestamp
             if time < earliestTime {
                 earliestTime = time
             }
-            if time > latestTime {
-                latestTime = time
-            }
+			if time > latestTime || time < earliestTime {
+			    latestTime = time
+			}
             let spellName = playerDamageEvent.spellName
             if playerDamageEvent.sourceName == playerName && playerDamageEvent.type != "SWING_DAMAGE_LANDED" {
                 selectedPlayerDamageEvents.append(playerDamageEvent)
@@ -194,7 +278,7 @@ func getPlayerDPSEvents(playerName: String) {
         }
     }
     numEvents = selectedPlayerDamageEvents.count
-    timeElapsed = latestTime.timeIntervalSince(earliestTime)
+    timeElapsed = annoyingTimeSince(earliestTime: earliestTime, latestTime: latestTime)
     unJuicedDPS = Double(totalDamage) / timeElapsed
     print("\(numEvents) events, max damage of \(maxDamage), total damage \(totalDamage), over \(timeElapsed) elapsed time, \(Double(totalDamage) / timeElapsed) DPS")
     print(" ")
@@ -206,7 +290,9 @@ func getPlayerDPSEvents(playerName: String) {
 }
 
 func fillPlayerAbilityStatsStorage() {
+	var debugString = ""
     for player in damageInstancesByPlayer.keys {
+		debugString += player + "<br>"
         print("\(player)")
         let currentPlayerDamageDictionary = damageInstancesByPlayer[player]!
         for damageType in currentPlayerDamageDictionary.keys {
@@ -223,6 +309,7 @@ func fillPlayerAbilityStatsStorage() {
             let sumOfSquaredDifferences = squaredDifferencesFromMean.reduce(0, +)
             let variance = sumOfSquaredDifferences / Double(values.count)
             let standardDeviation = sqrt(variance)
+			debugString += "\(damageType): \(values.count) instances, \(meanDamage) average damage, \(standardDeviation) stdDev, avg crit multiplier \(critMultiplier)<br>"
             print("\(damageType): \(values.count) instances, \(meanDamage) average damage, \(standardDeviation) stdDev, avg crit multiplier \(critMultiplier)")
             let stats: [String : Any] = ["SD" : standardDeviation,
                                          "count" : values.count,
@@ -230,9 +317,9 @@ func fillPlayerAbilityStatsStorage() {
                                          "critMultiplier" : critMultiplier]
             playerAbilityStatsStorage["\(player)-\(damageType)"] = stats
         }
-        print(" ")
-        print(" ")
+        debugString += "<br><br>"
     }
+	debugOutputArea.innerHTML = .string(debugString)
 }
 
 func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
@@ -259,6 +346,7 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
                                              partialResistAmount: 0,
                                              changeEvent: ChangeEvent(changeType: "partialResist", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamageAmount, stdDev: 0.0, multiplier: 0.0))
             modifiedDamageEvents.append(newDamageEvent)
+			modificationsSummaryString += "Undid a partial resist by \(alterableEventCandidate.sourceName)'s \(alterableEventCandidate.spellName) at \(alterableEventCandidate.timestamp). Old damage was \(alterableEventCandidate.damageAmount), new damage is \(newDamageAmount)<br>"
             let amountDamageAdded = newDamageAmount - alterableEventCandidate.damageAmount
             damageJuiced += amountDamageAdded
             return true
@@ -283,6 +371,8 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
             modifiedDamageEvents.append(newDamageEvent)
             let amountDamageAdded = newDamageAmount - alterableEventCandidate.damageAmount
             damageJuiced += amountDamageAdded
+			modificationsSummaryString += "Undid a glancing blow by \(alterableEventCandidate.sourceName) at \(alterableEventCandidate.timestamp). Old damage was \(alterableEventCandidate.damageAmount), new damage is \(newDamageAmount)<br>"
+			return true
         } else {
             return false
         }
@@ -314,6 +404,8 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
                 modifiedDamageEvents.append(newDamageEvent)
                 let amountDamageReduced = newDamageAmount - alterableEventCandidate.damageAmount
                 damageLowered += amountDamageReduced
+				modificationsSummaryString += "Added a glancing blow by \(alterableEventCandidate.sourceName) at \(alterableEventCandidate.timestamp). Old damage was \(alterableEventCandidate.damageAmount), new damage is \(newDamageAmount)<br>"
+				return true
             } else if resistableSpells.contains(alterableEventCandidate.spellName) {
                 //partial resist
                 let partialResistAmount = Int.random(in: 0..<3) + 1
@@ -334,6 +426,8 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
                                                  changeEvent: ChangeEvent(changeType: "addResist", oldDamage: alterableEventCandidate.damageAmount, newDamage: newDamageAmount, stdDev: 0.0, multiplier: 0.0))
                 modifiedDamageEvents.append(newDamageEvent)
                 damageLowered -= Int(damageSubtrahend)
+				modificationsSummaryString += "Added a partial resist of \(alterableEventCandidate.sourceName)'s \(alterableEventCandidate.spellName) at \(alterableEventCandidate.timestamp). Old damage was \(alterableEventCandidate.damageAmount), new damage is \(newDamageAmount)<br>"
+				return true
             } else {
                 return false
             }
@@ -378,6 +472,7 @@ func raiseOrLowerDamageRoll(alterableEventCandidate: DamageEvent) -> Bool {
                                          partialResistAmount: alterableEventCandidate.partialResistAmount,
                                          changeEvent: ChangeEvent(changeType: "damageRoll", oldDamage: alterableEventCandidate.damageAmount, newDamage: alterableEventCandidate.damageAmount + addend, stdDev: eventTypeStdDev, multiplier: multiplier))
         modifiedDamageEvents.append(newDamageEvent)
+		modificationsSummaryString += "Modified the damage roll of \(alterableEventCandidate.sourceName)'s \(alterableEventCandidate.spellName) at \(alterableEventCandidate.timestamp). Old damage was \(alterableEventCandidate.damageAmount), new damage is \(alterableEventCandidate.damageAmount + addend)<br>"
         let damageChange = newDamageEvent.damageAmount - alterableEventCandidate.damageAmount
         if damageChange < 0 {
             damageLowered += damageChange
@@ -387,7 +482,7 @@ func raiseOrLowerDamageRoll(alterableEventCandidate: DamageEvent) -> Bool {
         if alterableEventCandidate.type == "SWING_DAMAGE" {
             var swingDamageLandedEventFound = false
             var nextIndexToCheck = randomIndex + 1
-            while !swingDamageLandedEventFound {
+            while !swingDamageLandedEventFound, nextIndexToCheck < damageInstancesToModify.count {
                 let candidateEvent = damageInstancesToModify[nextIndexToCheck]
                 if candidateEvent.type == "SWING_DAMAGE_LANDED" && candidateEvent.sourceName == alterableEventCandidate.sourceName && candidateEvent.damageAmount == alterableEventCandidate.damageAmount {
                     let newDamageEvent = DamageEvent(timestamp: candidateEvent.timestamp,
@@ -453,10 +548,11 @@ func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
                     let damageDifference = newDamage - alterableEventCandidate.damageAmount
                     damageJuiced += damageDifference
                     modifiedDamageEvents.append(newDamageEvent)
+					modificationsSummaryString += "Added a critical strike for \(alterableEventCandidate.sourceName)'s \(alterableEventCandidate.spellName) at \(alterableEventCandidate.timestamp). Old damage was \(alterableEventCandidate.damageAmount), new damage is \(newDamage)<br>"
                     if alterableEventCandidate.type == "SWING_DAMAGE" {
                         var swingDamageLandedEventFound = false
                         var nextIndexToCheck = randomIndex + 1
-                        while !swingDamageLandedEventFound {
+                        while !swingDamageLandedEventFound, nextIndexToCheck < damageInstancesToModify.count {
                             let candidateEvent = damageInstancesToModify[nextIndexToCheck]
                             if candidateEvent.type == "SWING_DAMAGE_LANDED" && candidateEvent.sourceName == alterableEventCandidate.sourceName && candidateEvent.damageAmount == alterableEventCandidate.damageAmount {
                                 let newDamageEvent = DamageEvent(timestamp: candidateEvent.timestamp,
@@ -517,6 +613,7 @@ func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
                     let damageDifference = newDamage - alterableEventCandidate.damageAmount
                     damageLowered += damageDifference
                     modifiedDamageEvents.append(newDamageEvent)
+					modificationsSummaryString += "Removed a critical strike from \(alterableEventCandidate.sourceName)'s \(alterableEventCandidate.spellName) at \(alterableEventCandidate.timestamp). Old damage was \(alterableEventCandidate.damageAmount), new damage is \(newDamage)<br>"
                     if alterableEventCandidate.type == "SWING_DAMAGE" {
                         var swingDamageLandedEventFound = false
                         var nextIndexToCheck = randomIndex + 1
@@ -552,7 +649,6 @@ func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
             }
         }
     }
-    return false
 }
 
 
@@ -604,46 +700,12 @@ func createModifiedDamageEvents() {
             }
         }
         indexCount += 1
+		debugOutputArea.innerHTML = .string(modificationsSummaryString)
     }
-
 }
 
-func logSelected(file: String) {
-    initializeData(fileContents: file)
-    print("Whose parse you tryna juice?")
-    for damageInstance in damageInstances {
-        let instanceInformation = damageInstance.value
-        let source = instanceInformation.sourceName
-        if instanceInformation.sourceFlags.contains("0x5") {
-            sourceSet.insert(source)
-        }
-    }
-    for item in sourceSet {
-        print(item)
-    }
-    guard let playerNameInput = readLine() else { preconditionFailure("invalid player name") }
-    playerName = playerNameInput
-    print("How much you tryna juice his DPS by?")
-    guard let juiceFactorInput = readLine() else { preconditionFailure("invalid juice factor") }
-    juiceFactor = juiceFactorInput
-    print("juicing")
-    getPlayerDPSEvents(playerName: playerName)
-    fillPlayerAbilityStatsStorage()
-    createModifiedDamageEvents()
-}
-
-
-//insert juice
-
-print("Write file?")
-readLine()
-
-
-//insert juice
-
-do {
-    var fileString = try String.init(contentsOfFile: path)
-    var fileComponents = fileString.components(separatedBy: .newlines).filter({$0 != ""})
+func composeNewFileString(oldString: String) {
+    var fileComponents = oldString.components(separatedBy: .newlines).filter({$0 != ""})
     for damageEvent in modifiedDamageEvents {
         print(damageEvent.lineNumber)
         let originalString = fileComponents[damageEvent.lineNumber]
@@ -667,9 +729,32 @@ do {
         let newString = lineComponents.joined(separator: " ")
         fileComponents[damageEvent.lineNumber] = String(newString)
     }
-    fileString = fileComponents.joined(separator: "\n")
-    try fileString.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
-} catch {
-    print(error)
+    let newString = fileComponents.joined(separator: "\n")
+    //print(newString)
+	newFileString = newString
 }
 
+func logSelected(file: String, playerNameInput: String, juiceFactorInput: String) {
+    initializeData(fileContents: file)
+    //console.log("Whose parse you tryna juice?")
+    for damageInstance in damageInstances {
+        let instanceInformation = damageInstance.value
+        let source = instanceInformation.sourceName
+        if instanceInformation.sourceFlags.contains("0x5") {
+            sourceSet.insert(source)
+        }
+    }
+    for item in sourceSet {
+        print(item)
+    }
+    playerName = playerNameInput
+    print("How much you tryna juice his DPS by?")
+    juiceFactor = juiceFactorInput
+    print("juicing")
+    getPlayerDPSEvents(playerName: playerName)
+    fillPlayerAbilityStatsStorage()
+    createModifiedDamageEvents()
+    composeNewFileString(oldString: file)
+}
+
+print("nuts")
