@@ -278,27 +278,41 @@ func fillPlayerAbilityStatsStorage() {
 		debugString += player + "<br>"
         print("\(player)")
         let currentPlayerDamageDictionary = damageInstancesByPlayer[player]!
-        for damageType in currentPlayerDamageDictionary.keys {
+		for damageType in currentPlayerDamageDictionary.keys {
             let values = currentPlayerDamageDictionary[damageType]!
-            let totalDamage = values.reduce(0, {x, y in
+            let totalNonCritDamage = values.reduce(0, {x, y in
                 x + y.damageAmount
             })
             let crits = values.filter({return $0.didCrit == 1})
+            let nonCrits = values.filter({return $0.didCrit != 1})
             let critMultipliers = crits.map({return (Double($0.damageAmount) / Double($0.unmitigatedAmount))})
             let critMultiplier = critMultipliers.reduce(0.0, +) / Double(critMultipliers.count)
-            let meanDamage = Double(totalDamage) / Double(values.count)
-            let differencesFromMean = values.map({return Double($0.damageAmount) - meanDamage})
-            let squaredDifferencesFromMean = differencesFromMean.map({return pow($0, 2)})
-            let sumOfSquaredDifferences = squaredDifferencesFromMean.reduce(0, +)
-            let variance = sumOfSquaredDifferences / Double(values.count)
-            let standardDeviation = sqrt(variance)
-			debugString += "\(damageType): \(values.count) instances, \(meanDamage) average damage, \(standardDeviation) stdDev, avg crit multiplier \(critMultiplier)<br>"
-            print("\(damageType): \(values.count) instances, \(meanDamage) average damage, \(standardDeviation) stdDev, avg crit multiplier \(critMultiplier)")
-            let stats: [String : Any] = ["SD" : standardDeviation,
-                                         "count" : values.count,
-                                         "mean" : meanDamage,
+            let meanNonCritDamage = Double(totalNonCritDamage) / Double(values.count)
+            let nonCritDifferencesFromMean = values.map({return Double($0.damageAmount) - meanNonCritDamage})
+            let nonCritSquaredDifferencesFromMean = nonCritDifferencesFromMean.map({return pow($0, 2)})
+            let nonCritSumOfSquaredDifferences = nonCritSquaredDifferencesFromMean.reduce(0, +)
+            let nonCritVariance = nonCritSumOfSquaredDifferences / Double(nonCrits.count)
+            let nonCritStandardDeviation = sqrt(nonCritVariance)
+            print("\(damageType)-non crit: \(nonCrits.count) instances, \(meanNonCritDamage) average damage, \(nonCritStandardDeviation) stdDev, avg crit multiplier \(critMultiplier)")
+            let nonCritStats: [String : Any] = ["SD" : nonCritStandardDeviation,
+                                         "count" : nonCrits.count,
+                                         "mean" : meanNonCritDamage,
                                          "critMultiplier" : critMultiplier]
-            playerAbilityStatsStorage["\(player)-\(damageType)"] = stats
+            playerAbilityStatsStorage["\(player)-\(damageType)-nonCrit"] = nonCritStats
+            let totalCritDamage = crits.reduce(0, {x, y in
+                x + y.damageAmount
+            })
+            let meanCritDamage = Double(totalCritDamage) / Double(crits.count)
+            let critDifferencesFromMean = crits.map({return Double($0.damageAmount) - meanCritDamage})
+            let critSquaredDifferencesFromMean = critDifferencesFromMean.map({return pow($0, 2)})
+            let critSumOfSquaredDifferences = critSquaredDifferencesFromMean.reduce(0, +)
+            let critVariance = critSumOfSquaredDifferences / Double(crits.count)
+            let critStandardDeviation = sqrt(critVariance)
+            print("\(damageType)-crit: \(crits.count) instances, \(meanCritDamage) average damage, \(critStandardDeviation) stdDev, avg crit multiplier \(critMultiplier)")
+            let critStats: [String : Any] = ["SD" : critStandardDeviation,
+                                         "count" : crits.count,
+                                         "mean" : meanCritDamage]
+            playerAbilityStatsStorage["\(player)-\(damageType)-crit"] = critStats
         }
         debugString += "<br><br>"
     }
@@ -492,8 +506,9 @@ func raiseOrLowerDamageRoll(alterableEventCandidate: DamageEvent) -> Bool {
     } else if raiseOrLower == -1 && damageLowered <= (damageToJuice * -1) {
         return false
     }
-    let eventTypeStdDev = playerAbilityStatsStorage["\(alterableEventCandidate.sourceName)-\(alterableEventCandidate.spellName)"]!["SD"] as! Double
-    let eventMean = playerAbilityStatsStorage["\(alterableEventCandidate.sourceName)-\(alterableEventCandidate.spellName)"]!["mean"] as! Double
+	let critString = alterableEventCandidate.didCrit == 1 ? "-crit" : "-nonCrit"
+    let eventTypeStdDev = playerAbilityStatsStorage["\(alterableEventCandidate.sourceName)-\(alterableEventCandidate.spellName)\(critString)"]!["SD"] as! Double
+    let eventMean = playerAbilityStatsStorage["\(alterableEventCandidate.sourceName)-\(alterableEventCandidate.spellName)\(critString)"]!["mean"] as! Double
     if abs(eventDamage - eventMean) <= eventTypeStdDev {
         if (eventDamage - eventMean) > 0 && raiseOrLower == 1 {
             return false
@@ -576,7 +591,7 @@ func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
                 if alterableEventCandidate.spellName == "" {
                     //if not rogue, exit
                 }
-                if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)"]?["critMultiplier"] as? Double {
+                if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)-nonCrit"]?["critMultiplier"] as? Double {
                     let newDamage = Int(Double(alterableEventCandidate.damageAmount) * critMultiplier)
                     let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
                                                      type: alterableEventCandidate.type,
@@ -641,7 +656,7 @@ func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
                 if alterableEventCandidate.spellName == "" {
                     //if not rogue, exit
                 }
-                if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)"]?["critMultiplier"] as? Double {
+                if let critMultiplier = playerAbilityStatsStorage["\(playerName)-\(alterableEventCandidate.spellName)-nonCrit"]?["critMultiplier"] as? Double {
                     let newDamage = Int(Double(alterableEventCandidate.damageAmount) / critMultiplier)
                     let newDamageEvent = DamageEvent(timestamp: alterableEventCandidate.timestamp,
                                                      type: alterableEventCandidate.type,
