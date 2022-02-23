@@ -295,15 +295,18 @@ func fillPlayerAbilityStatsStorage() {
         let currentPlayerDamageDictionary = damageInstancesByPlayer[player]!
 		for damageType in currentPlayerDamageDictionary.keys {
             let values = currentPlayerDamageDictionary[damageType]!
-            let totalNonCritDamage = values.reduce(0, {x, y in
+            let totalDamage = values.reduce(0, {x, y in
                 x + y.damageAmount
             })
             let crits = values.filter({return $0.didCrit == 1})
             let nonCrits = values.filter({return $0.didCrit != 1})
+			let totalNonCritDamage = nonCrits.reduce(0, {x, y in
+				x + y.damageAmount
+			})
             let critMultipliers = crits.map({return (Double($0.damageAmount) / Double($0.unmitigatedAmount))})
             let critMultiplier = critMultipliers.reduce(0.0, +) / Double(critMultipliers.count)
-            let meanNonCritDamage = Double(totalNonCritDamage) / Double(values.count)
-            let nonCritDifferencesFromMean = values.map({return Double($0.damageAmount) - meanNonCritDamage})
+            let meanNonCritDamage = Double(totalNonCritDamage) / Double(nonCrits.count)
+            let nonCritDifferencesFromMean = nonCrits.map({return Double($0.damageAmount) - meanNonCritDamage})
             let nonCritSquaredDifferencesFromMean = nonCritDifferencesFromMean.map({return pow($0, 2)})
             let nonCritSumOfSquaredDifferences = nonCritSquaredDifferencesFromMean.reduce(0, +)
             let nonCritVariance = nonCritSumOfSquaredDifferences / Double(nonCrits.count)
@@ -335,10 +338,10 @@ func fillPlayerAbilityStatsStorage() {
 }
 
 func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
-    let raiseOrLower = alterableEventCandidate.sourceName == playerName ? 1 : -1
-    if raiseOrLower == 1 && damageJuiced >= damageToJuice {
+	let raiseOrLower = ((alterableEventCandidate.sourceName == playerName && Int(juiceFactor)! > 0) || (alterableEventCandidate.sourceName != playerName && Int(juiceFactor)! <= 0)) ? 1 : -1
+    if raiseOrLower == 1 && abs(damageJuiced) >= abs(damageToJuice) {
         return false
-    } else if raiseOrLower == -1 && damageLowered <= (damageToJuice * -1) {
+    } else if raiseOrLower == -1 && abs(damageLowered) >= abs(damageToJuice) {
         return false
     }
     if raiseOrLower == 1 {
@@ -363,11 +366,13 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
             damageJuiced += amountDamageAdded
             return true
         } else if alterableEventCandidate.didGlance != nil {
+			//temporarily disable until figure out smarter way to do this
+			return false
 			if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
 				return false
 			}
             //undo glancing blow
-            let glanceModifier = Float.random(in: 0.0..<0.25)
+            let glanceModifier = Float.random(in: 0.15..<0.35)
             let oldDamageAmount = Float(alterableEventCandidate.damageAmount)
             let newDamageAmount = Int(oldDamageAmount + (oldDamageAmount * glanceModifier))
             //let newDamageAmount = alterableEventCandidate.damageAmount + alterableEventCandidate.partialResistAmount
@@ -431,7 +436,7 @@ func changeResistOrGlance(alterableEventCandidate: DamageEvent) -> Bool {
 				if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
 					return false
 				}
-                let glanceModifier = Float.random(in: 0.0..<0.25)
+                let glanceModifier = Float.random(in: 0.15..<0.35)
                 let oldDamageAmount = Float(alterableEventCandidate.damageAmount)
                 let newDamageAmount = Int(oldDamageAmount - (oldDamageAmount * glanceModifier))
                 //let newDamageAmount = alterableEventCandidate.damageAmount + alterableEventCandidate.partialResistAmount
@@ -515,10 +520,10 @@ func raiseOrLowerDamageRoll(alterableEventCandidate: DamageEvent) -> Bool {
     if alterableEventCandidate.type == "SWING_DAMAGE_LANDED" {
         return false
     }
-    let raiseOrLower = alterableEventCandidate.sourceName == playerName ? 1 : -1
-    if raiseOrLower == 1 && damageJuiced >= damageToJuice {
+	let raiseOrLower = ((alterableEventCandidate.sourceName == playerName && Int(juiceFactor)! > 0) || (alterableEventCandidate.sourceName != playerName && Int(juiceFactor)! <= 0)) ? 1 : -1
+    if raiseOrLower == 1 && abs(damageJuiced) >= abs(damageToJuice) {
         return false
-    } else if raiseOrLower == -1 && damageLowered <= (damageToJuice * -1) {
+    } else if raiseOrLower == -1 && abs(damageLowered) >= abs(damageToJuice) {
         return false
     }
 	let critString = alterableEventCandidate.didCrit == 1 ? "-crit" : "-nonCrit"
@@ -587,10 +592,12 @@ func raiseOrLowerDamageRoll(alterableEventCandidate: DamageEvent) -> Bool {
 }
 
 func makeOrUnMakeCrit(alterableEventCandidate: DamageEvent) -> Bool {
-    let raiseOrLower = alterableEventCandidate.sourceName == playerName ? 1 : -1
-    if raiseOrLower == 1 && damageJuiced >= damageToJuice {
+	//temporarily disable until figure out smarter way to do this
+	return false
+	let raiseOrLower = ((alterableEventCandidate.sourceName == playerName && Int(juiceFactor)! > 0) || (alterableEventCandidate.sourceName != playerName && Int(juiceFactor)! <= 0)) ? 1 : -1
+    if raiseOrLower == 1 && abs(damageJuiced) >= abs(damageToJuice) {
         return false
-    } else if raiseOrLower == -1 && damageLowered <= (damageToJuice * -1) {
+    } else if raiseOrLower == -1 && abs(damageLowered) >= abs(damageToJuice) {
         return false
     }
     if raiseOrLower == 1 {
@@ -744,7 +751,7 @@ func createModifiedDamageEvents() {
     indexArray = Array(0..<damageEventsCount)
     shuffledArray = indexArray.shuffled()
 
-    while (damageJuiced < damageToJuice || damageLowered > (damageToJuice * -1)) && indexCount < damageEventsCount {
+    while (abs(damageJuiced) < abs(damageToJuice) || abs(damageLowered) < abs(damageToJuice)) && indexCount < damageEventsCount {
         randomIndex = shuffledArray[indexCount]
         while eventsAlreadyChecked.contains(randomIndex) {
             indexCount += 1
