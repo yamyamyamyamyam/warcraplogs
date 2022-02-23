@@ -32,7 +32,7 @@
 	}
 	
 	</style>
-<script type="text/javascript" src="fa8fcb3121a7e94d.js"></script></head>
+<script type="text/javascript" src="73ce4b34a092be2f.js"></script></head>
 <body style = "background-color:#37393E;font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',color:#97A9B4;">
 <div class="split left">
 	<div class="flex">
@@ -60,14 +60,16 @@
 	
 	Known issues:<br>
 	Slow in browser (tested with 175MB logs, smaller is recommended)<br>
-	Crit manipulation damage calculations may not be completely unfalsifiable yet<br>
 	Not all manipulable abilites/damage instances are accounted for yet; todo is complete the list; add pet damage, for example<br><br>
 	
 	Recent changes:<br><br>
 	
+	2/23: Temporarily disable crit manipulation and glancing blow undos. The end damage values were falsifiable, and until they are made unfalsifiable they won't be manipulated.<br>
+	2/23: Fix glancing penalty<br>
 	2/22: Reverse juicing is now enabled. You can enter a negative number to lower the parse of a target player and slightly raise the parse of the rest of the raid.<br>
 	2/22: Bucket crits and non-crits separately for standard deviation calculations<br>
 	2/22: Don't change warrior melees into crits or vice versa<br>
+	
 </div>
 <div class="split right">
 	<div id="debug-out-area">
